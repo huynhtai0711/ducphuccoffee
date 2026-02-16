@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+body { @apply bg-stone-100 text-stone-900; }
+.card { @apply bg-white rounded-xl shadow p-4; }
+.btn { @apply bg-amber-700 text-white px-3 py-2 rounded-lg text-sm; }
+.input { @apply w-full rounded-lg border px-3 py-2 text-sm; }
