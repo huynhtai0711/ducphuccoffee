@@ -1,22 +1,30 @@
 # Coffee Roastery Manager (FastAPI + React)
 
-Ứng dụng quản lý xưởng rang cà phê (UI tiếng Việt), chạy local bằng Docker Compose trên Windows.
+Ứng dụng quản lý xưởng rang cà phê chạy local bằng Docker Compose, giao diện tiếng Việt, có đủ menu nghiệp vụ cho Admin/Kho/Sales.
 
-## Chạy nhanh (Windows PowerShell)
+## 1) Chạy nhanh (Windows PowerShell)
 ```powershell
 docker compose up --build
 ```
 
-- Backend docs: http://localhost:8001/docs
-- Frontend: http://localhost:3000
-- Tài khoản mặc định: `admin / admin123`
+- Web: http://localhost:3000
+- API docs: http://localhost:8002/docs
+- Tài khoản mặc định: `admin / Admin@12345`
 
-## Cấu trúc
-- `backend/`: FastAPI, SQLAlchemy 2.x, Alembic, SQLite (`backend/data/roastery.db`)
-- `frontend/`: React (Vite), dashboard + các module nghiệp vụ
-- `docker-compose.yml`: API map `8001:8000`, frontend map `3000:3000`
+## 2) Đổi port khi máy đang bận cổng
+PowerShell:
+```powershell
+$env:API_PORT=8010
+$env:WEB_PORT=3300
+docker compose up --build
+```
 
-## Module menu
+## 3) Cấu trúc monorepo
+- `backend/`: FastAPI + SQLAlchemy + Alembic + SQLite (`backend/data/app.db`)
+- `frontend/`: React (Vite)
+- `docker-compose.yml`: 2 services `api` + `frontend`
+
+## 4) Menu hệ thống
 1. Tổng quan
 2. Nhập hàng
 3. Sản xuất
@@ -28,37 +36,35 @@ docker compose up --build
 9. Báo cáo
 10. Cài đặt
 
-## Seed mặc định khi DB trống
-- User: `admin / admin123`
-- Bean types:
-  1. Robusta S18
-  2. Culi Robusta S18
-  3. Robusta Honey S18
-  4. Arabica S18
+## 5) Seed dữ liệu mặc định
+- 4 loại nhân:
+  1) Robusta S18
+  2) Culi Robusta S18
+  3) Robusta Honey S18
+  4) Arabica S18
+- Users:
+  - Admin: `admin / Admin@12345`
+  - Kho: `warehouse / warehouse123`
+  - Sales: `sales / sales123`
 
-## Reset DB sạch
+## 6) Reset sạch để chạy lại
 ```powershell
-Remove-Item .\backend\data\roastery.db -ErrorAction SilentlyContinue
-cd .\backend
-alembic upgrade head
-cd ..
+docker compose down -v
+Remove-Item .\backend\data\app.db -ErrorAction SilentlyContinue
+Remove-Item .\backend\backups\* -ErrorAction SilentlyContinue
+docker compose up --build
 ```
 
-## Backup / Restore
-### Backup
-- API: `POST /system/update/backup`
-- File backup lưu tại `backend/backups/`
+## 7) Backup SQLite
+- API backup: `POST /system/update/backup`
+- File tạo trong `./backend/backups`
 
-### Restore thủ công
-```powershell
-Copy-Item .\backend\backups\<file_backup>.db .\backend\data\roastery.db -Force
-```
+## 8) Migration + Update flow
+- Container API tự chạy `alembic upgrade head` mỗi lần start.
+- Sau migrate, app startup sẽ tự seed dữ liệu mặc định nếu DB trống.
 
-## Test backend
+## 9) Chạy test backend
 ```bash
 cd backend
 pytest -q
 ```
-
-## Ghi chú bảo mật
-- Hash password dùng **Argon2id** qua passlib (không dùng bcrypt).
