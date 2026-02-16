@@ -1,0 +1,17 @@
+services:
+  backend:
+    build: ./backend
+    container_name: roastery_backend
+    working_dir: /app
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/backups:/app/backups
+    ports:
+      - "8001:8000"
+  frontend:
+    build: ./frontend
+    container_name: roastery_frontend
+    depends_on:
+      - backend
+    ports:
+      - "5174:80"

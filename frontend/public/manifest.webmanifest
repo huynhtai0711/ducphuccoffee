@@ -1,0 +1,9 @@
+{
+  "name": "Coffee Roastery Manager",
+  "short_name": "Roastery",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fafaf9",
+  "theme_color": "#3f2a1d",
+  "icons": []
+}
