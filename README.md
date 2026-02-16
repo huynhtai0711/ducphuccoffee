@@ -9,13 +9,22 @@
 ```bash
 docker compose up --build
 ```
-- Frontend: `http://localhost:5174`
-- API: `http://localhost:8001`
+- Frontend (Docker): `http://localhost:5174`
+- API (Docker): `http://localhost:8001`
+- Frontend dev (Vite): `http://localhost:5173` (hoặc cổng trong `npm run dev`)
 
 Tài khoản seed:
 - `admin / admin123`
 - `warehouse / warehouse123`
 - `sales / sales123`
+
+
+## 1.1) Giao diện mobile-first (UI/UX)
+- Mobile ưu tiên thao tác nhanh với **Bottom Navigation 5 tab**: Tổng quan, Nhập hàng, Rang, Bán hàng, CRM.
+- Có nút **FAB (+)** ở góc phải để tạo nhanh các tác vụ thường dùng.
+- Form tạo mới mở dạng **Bottom Sheet** (trượt từ dưới lên), nút lưu sticky ở đáy để thao tác 1 tay.
+- Desktop/tablet tự chuyển sang layout **Sidebar + Main content**.
+- Toàn bộ nhãn/validation/toast sử dụng tiếng Việt.
 
 ## 2) Chạy local không Docker
 ### Backend
