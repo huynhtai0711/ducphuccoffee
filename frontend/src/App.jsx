@@ -1,67 +1,48 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { Toaster, toast } from 'sonner'
+import { Toaster } from 'sonner'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import InventoryPage from './pages/InventoryPage'
 import RoastPage from './pages/RoastPage'
 import SalesPage from './pages/SalesPage'
 import CrmPage from './pages/CrmPage'
 import SystemUpdatePage from './pages/SystemUpdatePage'
+import BottomNav from './components/BottomNav'
 import client from './api/client'
-import AppLayout from './components/AppLayout'
-import PurchasePage from './pages/PurchasePage'
-import ProductsPage from './pages/ProductsPage'
-import SettingsPage from './pages/SettingsPage'
 
-function PrivateRoutes({ user, onLogout }) {
+function PrivateLayout() {
   return (
-    <Routes>
-      <Route element={<AppLayout user={user} onLogout={onLogout} />}>
+    <div>
+      <header className="p-3 bg-stone-900 text-white flex justify-between"><span>Coffee Roastery Manager</span><Link to="/system-update" className="text-xs">System</Link></header>
+      <Routes>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/purchases" element={<PurchasePage />} />
+        <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/roast" element={<RoastPage />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/crm" element={<CrmPage />} />
-        <Route path="/products" element={<ProductsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/system-update" element={<SystemUpdatePage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" />} />
-    </Routes>
+      </Routes>
+      <BottomNav />
+    </div>
   )
 }
 
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem('token'))
-  const [user, setUser] = useState(null)
+  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('token'))
 
   useEffect(() => {
-    if (!token) return
-    client.get('/auth/me')
-      .then((res) => setUser(res.data))
-      .catch(() => {
+    if (loggedIn) {
+      client.get('/auth/me').catch(() => {
         localStorage.removeItem('token')
-        setToken(null)
-        setUser(null)
-        toast.error('Phiên đăng nhập đã hết hạn')
+        setLoggedIn(false)
       })
-  }, [token])
+    }
+  }, [loggedIn])
 
-  const onLogin = (newToken) => {
-    localStorage.setItem('token', newToken)
-    setToken(newToken)
-  }
-
-  const onLogout = () => {
-    localStorage.removeItem('token')
-    setToken(null)
-    setUser(null)
-  }
-
-  return (
-    <BrowserRouter>
-      <Toaster richColors position="top-center" />
-      {!token ? <LoginPage onLogin={onLogin} /> : user ? <PrivateRoutes user={user} onLogout={onLogout} /> : <div className="p-6">Đang tải phiên...</div>}
-    </BrowserRouter>
-  )
+  return <BrowserRouter>
+    <Toaster richColors position="top-center" />
+    {loggedIn ? <PrivateLayout /> : <LoginPage onLogin={() => setLoggedIn(true)} />}
+    {!loggedIn && <Navigate to="/" />}
+  </BrowserRouter>
 }
