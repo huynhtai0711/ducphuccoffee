@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_permission
 from app.core.config import settings
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.session import get_db
 from app.models.entities import (
     AuditLog,
@@ -30,6 +30,7 @@ from app.models.entities import (
     RoastBatch,
     RoleEnum,
     SalesOrder,
+    Expense,
     SegmentEnum,
     Settings,
     StockLedger,
@@ -37,7 +38,7 @@ from app.models.entities import (
     User,
     VatTypeEnum,
 )
-from app.schemas.common import BeanIn, CustomerIn, FollowUpIn, LoginIn, ProductIn, PurchaseIn, RoastIn, SalesIn
+from app.schemas.common import BeanIn, CustomerIn, ExpenseIn, FollowUpIn, LoginIn, ProductIn, PurchaseIn, RoastIn, SalesIn, SettingsIn, UserIn
 from app.services.inventory import add_ledger, consume_fifo, current_stock
 
 router = APIRouter()
@@ -122,6 +123,11 @@ def create_purchase(payload: PurchaseIn, db: Session = Depends(get_db), user: Us
     return po
 
 
+@router.get("/purchases")
+def list_purchases(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return db.query(PurchaseOrder).order_by(PurchaseOrder.id.desc()).all()
+
+
 @router.post("/roasts")
 def create_roast(payload: RoastIn, db: Session = Depends(get_db), user: User = Depends(require_permission("can_adjust_inventory"))):
     product = db.get(Product, payload.product_id)
@@ -180,6 +186,25 @@ def create_roast(payload: RoastIn, db: Session = Depends(get_db), user: User = D
     return roast
 
 
+@router.get("/roasts")
+def list_roasts(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return db.query(RoastBatch).order_by(RoastBatch.id.desc()).all()
+
+
+@router.delete("/roasts/{roast_id}")
+def cancel_roast(roast_id: int, db: Session = Depends(get_db), user: User = Depends(require_permission("can_adjust_inventory"))):
+    roast = db.get(RoastBatch, roast_id)
+    if not roast or roast.deleted:
+        raise HTTPException(404, "Không tìm thấy mẻ rang")
+    roast.deleted = True
+    rows = db.query(StockLedger).filter(StockLedger.reference_type == "roast", StockLedger.reference_id == roast_id).all()
+    for row in rows:
+        add_ledger(db, segment=row.segment, bean_type_id=row.bean_type_id, product_id=row.product_id, vat_type=row.vat_type, quantity_kg=-row.quantity_kg, unit_cost=row.unit_cost, reason=LedgerReason.ROLLBACK, reference_type="roast_rollback", reference_id=roast_id, rollback_of_id=row.id)
+    audit(db, user.id, "roast.cancel", f"Roast#{roast_id}")
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/inventory")
 def inventory(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return {"current": current_stock(db), "ledger": db.query(StockLedger).order_by(StockLedger.id.desc()).limit(200).all()}
@@ -187,7 +212,7 @@ def inventory(db: Session = Depends(get_db), user: User = Depends(get_current_us
 
 @router.post("/customers")
 def create_customer(payload: CustomerIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role == RoleEnum.SALES_CRM and payload.assigned_user_id not in (None, user.id):
+    if user.role == RoleEnum.SALES and payload.assigned_user_id not in (None, user.id):
         raise HTTPException(403, "Chỉ được gán khách của bạn")
     customer = Customer(**payload.model_dump())
     db.add(customer)
@@ -201,7 +226,7 @@ def list_customers(status: str | None = None, db: Session = Depends(get_db), use
     q = db.query(Customer).filter(Customer.archived.is_(False))
     if status:
         q = q.filter(Customer.status == status)
-    if user.role == RoleEnum.SALES_CRM:
+    if user.role == RoleEnum.SALES:
         q = q.filter(Customer.assigned_user_id == user.id)
     return q.all()
 
@@ -219,7 +244,7 @@ def create_followup(payload: FollowUpIn, db: Session = Depends(get_db), user: Us
 def crm_dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     today = date.today()
     q = db.query(FollowUp)
-    if user.role == RoleEnum.SALES_CRM:
+    if user.role == RoleEnum.SALES:
         q = q.join(Customer, Customer.id == FollowUp.customer_id).filter(Customer.assigned_user_id == user.id)
     all_f = q.all()
     return {
@@ -230,6 +255,9 @@ def crm_dashboard(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.post("/sales")
 def create_sale(payload: SalesIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    app_settings = db.query(Settings).first()
+    if user.role == RoleEnum.WAREHOUSE and app_settings and not app_settings.warehouse_can_create_sales:
+        raise HTTPException(403, "Kho không được phép tạo đơn bán theo cấu hình")
     product = db.get(Product, payload.product_id)
     if not product:
         raise HTTPException(404, "Không tìm thấy sản phẩm")
@@ -280,6 +308,16 @@ def create_sale(payload: SalesIn, db: Session = Depends(get_db), user: User = De
     return so
 
 
+@router.get("/sales")
+def list_sales(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return db.query(SalesOrder).order_by(SalesOrder.id.desc()).all()
+
+
+@router.post("/sales/{sale_id}/cancel")
+def cancel_sale(sale_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return delete_sale(sale_id, db, user)
+
+
 @router.delete("/sales/{sale_id}")
 def delete_sale(sale_id: int, db: Session = Depends(get_db), user: User = Depends(require_permission("can_delete_sales"))):
     sale = db.get(SalesOrder, sale_id)
@@ -304,6 +342,112 @@ def delete_sale(sale_id: int, db: Session = Depends(get_db), user: User = Depend
     audit(db, user.id, "sale.delete", f"Sale#{sale_id}")
     db.commit()
     return {"ok": True}
+
+
+@router.get("/expenses")
+def list_expenses(start: date | None = None, end: date | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = db.query(Expense).filter(Expense.deleted.is_(False))
+    if start:
+        q = q.filter(func.date(Expense.spent_at) >= start)
+    if end:
+        q = q.filter(func.date(Expense.spent_at) <= end)
+    return q.order_by(Expense.id.desc()).all()
+
+
+@router.post("/expenses")
+def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    expense = Expense(expense_type=payload.expense_type, amount=payload.amount, spent_at=payload.spent_at or datetime.utcnow(), note=payload.note)
+    db.add(expense)
+    audit(db, user.id, "expense.create", json.dumps(payload.model_dump(), ensure_ascii=False, default=str))
+    db.commit()
+    db.refresh(expense)
+    return expense
+
+
+@router.get("/debts")
+def debt_summary(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.query(SalesOrder).filter(SalesOrder.deleted.is_(False)).all()
+    result = {}
+    for s in rows:
+        key = s.customer_id
+        total = s.quantity_kg * s.price_per_kg * (1 + s.vat_percent / 100)
+        paid = sum(p.amount for p in db.query(Payment).filter(Payment.sales_order_id == s.id).all())
+        obj = result.setdefault(key, {"customer_id": key, "total": 0.0, "paid": 0.0})
+        obj["total"] += total
+        obj["paid"] += paid
+    return [{**v, "remaining": v["total"] - v["paid"]} for v in result.values()]
+
+
+@router.post("/sales/{sale_id}/payments")
+def collect_payment(sale_id: int, payload: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    sale = db.get(SalesOrder, sale_id)
+    if not sale or sale.deleted:
+        raise HTTPException(404, "Không tìm thấy đơn hàng")
+    payment = Payment(sales_order_id=sale_id, amount=float(payload.get("amount", 0)), method=payload.get("method", "cash"))
+    if payment.amount <= 0:
+        raise HTTPException(400, "Số tiền thu phải lớn hơn 0")
+    db.add(payment)
+    audit(db, user.id, "debt.collect", f"Sale#{sale_id} amount={payment.amount}")
+    db.commit()
+    return payment
+
+
+@router.get("/settings")
+def get_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return db.query(Settings).first()
+
+
+@router.put("/settings")
+def update_settings(payload: SettingsIn, db: Session = Depends(get_db), user: User = Depends(require_permission("can_manage_users"))):
+    s = db.query(Settings).first()
+    s.low_stock_threshold_kg = payload.low_stock_threshold_kg
+    s.warehouse_can_create_sales = payload.warehouse_can_create_sales
+    audit(db, user.id, "settings.update", json.dumps(payload.model_dump(), ensure_ascii=False))
+    db.commit()
+    return s
+
+
+@router.get("/users")
+def list_users(db: Session = Depends(get_db), user: User = Depends(require_permission("can_manage_users"))):
+    return db.query(User).order_by(User.id).all()
+
+
+@router.post("/users")
+def create_user(payload: UserIn, db: Session = Depends(get_db), user: User = Depends(require_permission("can_manage_users"))):
+    model = User(username=payload.username, full_name=payload.full_name, role=RoleEnum(payload.role), hashed_password=get_password_hash(payload.password), active=True, can_adjust_inventory=payload.role in ["ADMIN", "WAREHOUSE"], can_delete_sales=payload.role=="ADMIN", can_view_cost=payload.role!="SALES", can_manage_users=payload.role=="ADMIN")
+    db.add(model)
+    audit(db, user.id, "user.create", payload.username)
+    db.commit()
+    db.refresh(model)
+    return model
+
+
+@router.post("/users/{user_id}/toggle")
+def toggle_user(user_id: int, db: Session = Depends(get_db), user: User = Depends(require_permission("can_manage_users"))):
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "Không tìm thấy user")
+    target.active = not target.active
+    audit(db, user.id, "user.toggle", f"{target.username}:{target.active}")
+    db.commit()
+    return target
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_password(user_id: int, payload: dict, db: Session = Depends(get_db), user: User = Depends(require_permission("can_manage_users"))):
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "Không tìm thấy user")
+    new_pw = payload.get("password") or "123456"
+    target.hashed_password = get_password_hash(new_pw)
+    audit(db, user.id, "user.reset_password", target.username)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/audits")
+def list_audits(db: Session = Depends(get_db), user: User = Depends(require_permission("can_manage_users"))):
+    return db.query(AuditLog).order_by(AuditLog.id.desc()).limit(500).all()
 
 
 @router.get("/reports/sales")

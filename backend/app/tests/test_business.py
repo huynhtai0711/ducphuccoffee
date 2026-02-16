@@ -1,6 +1,14 @@
+from app.models import entities  # noqa: F401
+from app.db.session import Base, engine, SessionLocal
+from app.seed import seed_data
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+Base.metadata.create_all(bind=engine)
+db = SessionLocal()
+seed_data(db)
+db.close()
 
 client = TestClient(app)
 
@@ -33,7 +41,6 @@ def test_purchase_roast_sale_fifo_and_soft_delete():
     }
     pr = client.post("/products", json=product_payload, headers=headers)
     if pr.status_code not in (200, 201):
-        # Existing from previous run
         products = client.get("/products", headers=headers).json()
         product = next(x for x in products if x["name"] == "Blend Test")
         product_id = product["id"]

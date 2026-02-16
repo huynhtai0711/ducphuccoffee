@@ -1,46 +1,49 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import client from '../api/client'
-import PageHeader from '../components/PageHeader'
-import { apiErrorMessage } from '../lib/utils'
 
 export default function SettingsPage() {
-  const [beans, setBeans] = useState([])
-  const [name, setName] = useState('')
+  const [settings, setSettings] = useState({ low_stock_threshold_kg: 60, warehouse_can_create_sales: true })
+  const [users, setUsers] = useState([])
+  const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'WAREHOUSE' })
 
-  const load = () => client.get('/beans').then((r) => setBeans(r.data))
+  const load = async () => {
+    const [s, u] = await Promise.all([client.get('/settings'), client.get('/users')])
+    setSettings(s.data)
+    setUsers(u.data)
+  }
   useEffect(() => { load() }, [])
 
-  const createBean = async () => {
-    if (!name.trim()) return
-    try {
-      await client.post('/beans', { name, enabled: true })
-      toast.success('Đã thêm loại nhân')
-      setName('')
-      load()
-    } catch (error) {
-      toast.error(apiErrorMessage(error))
-    }
+  const saveSettings = async () => {
+    await client.put('/settings', settings)
+    toast.success('Đã lưu cài đặt')
   }
 
-  return (
-    <div className="space-y-4">
-      <PageHeader title="Thiết lập" description="Ngưỡng cảnh báo mặc định 60kg và quản lý loại nhân" />
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h3 className="font-semibold">Ngưỡng cảnh báo tồn kho</h3>
-        <p className="text-sm text-stone-500">Hiện đang áp dụng 60kg theo backend.</p>
-      </section>
+  const createUser = async () => {
+    await client.post('/users', newUser)
+    toast.success('Đã tạo user')
+    setNewUser({ username: '', full_name: '', password: '', role: 'WAREHOUSE' })
+    load()
+  }
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h3 className="font-semibold">Loại nhân</h3>
-        <div className="mt-3 flex gap-2">
-          <input className="input" placeholder="Tên loại nhân" value={name} onChange={(e) => setName(e.target.value)} />
-          <button className="btn" onClick={createBean}>Thêm</button>
-        </div>
-        <div className="mt-3 space-y-2">
-          {beans.map((bean) => <div key={bean.id} className="rounded-xl border p-2 text-sm">{bean.name}</div>)}
-        </div>
-      </section>
+  return <div className="space-y-3">
+    <div className="card space-y-2">
+      <h2 className="font-semibold">Cấu hình hệ thống</h2>
+      <label>Ngưỡng cảnh báo tồn (kg)</label>
+      <input className="input" type="number" value={settings.low_stock_threshold_kg || 60} onChange={(e) => setSettings({ ...settings, low_stock_threshold_kg: Number(e.target.value) })} />
+      <label className="chip"><input type="checkbox" checked={!!settings.warehouse_can_create_sales} onChange={(e) => setSettings({ ...settings, warehouse_can_create_sales: e.target.checked })} /> Cho phép KHO tạo đơn bán</label>
+      <button className="btn" onClick={saveSettings}>Lưu cài đặt</button>
     </div>
-  )
+    <div className="card space-y-2">
+      <h2 className="font-semibold">Quản lý user</h2>
+      <div className="grid grid-cols-2 gap-2">
+        <input className="input" placeholder="Username" value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} />
+        <input className="input" placeholder="Họ tên" value={newUser.full_name} onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })} />
+        <input className="input" placeholder="Mật khẩu" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
+        <select className="input" value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}><option>WAREHOUSE</option><option>SALES</option><option>ADMIN</option></select>
+      </div>
+      <button className="btn" onClick={createUser}>Tạo user</button>
+      {users.map((u) => <div key={u.id} className="text-sm border-t pt-1">{u.username} - {u.role} - {u.active ? 'Đang hoạt động' : 'Đã khóa'}</div>)}
+    </div>
+  </div>
 }
