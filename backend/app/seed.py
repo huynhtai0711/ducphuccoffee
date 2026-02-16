@@ -17,7 +17,7 @@ def seed_data(db: Session):
         db.add(
             User(
                 username="admin",
-                hashed_password=get_password_hash("admin123"),
+                hashed_password=get_password_hash("Admin@12345"),
                 full_name="Quản trị viên",
                 role=RoleEnum.ADMIN,
                 can_adjust_inventory=True,

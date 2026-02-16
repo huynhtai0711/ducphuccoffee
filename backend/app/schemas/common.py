@@ -76,6 +76,8 @@ class SalesIn(BaseModel):
     quantity_kg: float = Field(gt=0)
     price_per_kg: float = Field(gt=0)
     packaging_cost_per_kg: float = 0
+    vat_percent_override: float | None = Field(default=None, ge=0, le=100)
+    paid_amount: float = Field(default=0, ge=0)
     sold_at: datetime | None = None
     payments: list[PaymentIn] = []
 
@@ -104,7 +106,7 @@ class ExpenseIn(BaseModel):
 class UserIn(BaseModel):
     username: str
     full_name: str
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8, max_length=128)
     role: str
 
 

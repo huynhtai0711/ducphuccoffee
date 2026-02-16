@@ -3,18 +3,24 @@ services:
     build: ./backend
     container_name: roastery_api
     working_dir: /app
+    environment:
+      - DATABASE_URL=sqlite:///./data/app.db
+      - SECRET_KEY=${SECRET_KEY:-super-secret-dev-key-change-me}
     volumes:
       - ./backend/data:/app/data
       - ./backend/backups:/app/backups
     ports:
-      - "8001:8000"
+      - "${API_PORT:-8002}:8000"
+
   frontend:
     build: ./frontend
     container_name: roastery_frontend
     depends_on:
       - api
+    environment:
+      - VITE_API_URL=http://localhost:${API_PORT:-8002}
     volumes:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"

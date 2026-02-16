@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_permission
 from app.core.config import settings
-from app.core.security import create_access_token, get_password_hash, verify_password
+from app.core.security import create_access_token, get_password_hash, validate_password_input, verify_password
 from app.db.session import get_db
 from app.models.entities import (
     AuditLog,
@@ -91,6 +91,10 @@ def list_products(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.post("/products")
 def create_product(payload: ProductIn, db: Session = Depends(get_db), user: User = Depends(require_permission("can_adjust_inventory"))):
+    existing = db.query(Product).filter(Product.name == payload.name).first()
+    if existing:
+        return existing
+
     product = Product(name=payload.name, vat_type=VatTypeEnum(payload.vat_type))
     db.add(product)
     db.flush()
@@ -98,6 +102,7 @@ def create_product(payload: ProductIn, db: Session = Depends(get_db), user: User
         db.add(ProductRecipe(product_id=product.id, bean_type_id=r.bean_type_id, ratio_percent=r.ratio_percent))
     audit(db, user.id, "product.create", product.name)
     db.commit()
+    db.refresh(product)
     return product
 
 
@@ -120,6 +125,7 @@ def create_purchase(payload: PurchaseIn, db: Session = Depends(get_db), user: Us
     )
     audit(db, user.id, "purchase.create", f"PO#{po.id}")
     db.commit()
+    db.refresh(po)
     return po
 
 
@@ -183,6 +189,7 @@ def create_roast(payload: RoastIn, db: Session = Depends(get_db), user: User = D
     )
     audit(db, user.id, "roast.create", f"Roast#{roast.id}")
     db.commit()
+    db.refresh(roast)
     return roast
 
 
@@ -218,6 +225,7 @@ def create_customer(payload: CustomerIn, db: Session = Depends(get_db), user: Us
     db.add(customer)
     audit(db, user.id, "customer.create", customer.name)
     db.commit()
+    db.refresh(customer)
     return customer
 
 
@@ -265,7 +273,8 @@ def create_sale(payload: SalesIn, db: Session = Depends(get_db), user: User = De
     cogs = avg_cost * payload.quantity_kg
     revenue = payload.price_per_kg * payload.quantity_kg
     packaging_cost = payload.packaging_cost_per_kg * payload.quantity_kg
-    vat_percent = 8 if product.vat_type == VatTypeEnum.VAT else 0
+    default_vat_percent = 8 if product.vat_type == VatTypeEnum.VAT else 0
+    vat_percent = payload.vat_percent_override if payload.vat_percent_override is not None else default_vat_percent
     vat_amount = revenue * vat_percent / 100
     gross_profit = revenue - cogs
     net_profit = gross_profit - packaging_cost - vat_amount
@@ -302,9 +311,12 @@ def create_sale(payload: SalesIn, db: Session = Depends(get_db), user: User = De
 
     for p in payload.payments:
         db.add(Payment(sales_order_id=so.id, amount=p.amount, method=p.method))
+    if payload.paid_amount > 0:
+        db.add(Payment(sales_order_id=so.id, amount=payload.paid_amount, method="cash"))
 
     audit(db, user.id, "sale.create", f"Sale#{so.id}")
     db.commit()
+    db.refresh(so)
     return so
 
 
@@ -414,7 +426,12 @@ def list_users(db: Session = Depends(get_db), user: User = Depends(require_permi
 
 @router.post("/users")
 def create_user(payload: UserIn, db: Session = Depends(get_db), user: User = Depends(require_permission("can_manage_users"))):
-    model = User(username=payload.username, full_name=payload.full_name, role=RoleEnum(payload.role), hashed_password=get_password_hash(payload.password), active=True, can_adjust_inventory=payload.role in ["ADMIN", "WAREHOUSE"], can_delete_sales=payload.role=="ADMIN", can_view_cost=payload.role!="SALES", can_manage_users=payload.role=="ADMIN")
+    try:
+        safe_password = validate_password_input(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    model = User(username=payload.username, full_name=payload.full_name, role=RoleEnum(payload.role), hashed_password=get_password_hash(safe_password), active=True, can_adjust_inventory=payload.role in ["ADMIN", "WAREHOUSE"], can_delete_sales=payload.role=="ADMIN", can_view_cost=payload.role!="SALES", can_manage_users=payload.role=="ADMIN")
     db.add(model)
     audit(db, user.id, "user.create", payload.username)
     db.commit()
@@ -438,8 +455,11 @@ def reset_password(user_id: int, payload: dict, db: Session = Depends(get_db), u
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(404, "Không tìm thấy user")
-    new_pw = payload.get("password") or "123456"
-    target.hashed_password = get_password_hash(new_pw)
+    new_pw = payload.get("password") or "Admin@12345"
+    try:
+        target.hashed_password = get_password_hash(validate_password_input(new_pw))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     audit(db, user.id, "user.reset_password", target.username)
     db.commit()
     return {"ok": True}
@@ -529,14 +549,14 @@ def system_info(db: Session = Depends(get_db), user: User = Depends(require_perm
 
 @router.post("/system/update/backup")
 def backup_db(db: Session = Depends(get_db), user: User = Depends(require_permission("can_manage_users"))):
-    db_path = Path("data/roastery.db")
+    db_path = Path("data/app.db")
     if not db_path.exists():
         raise HTTPException(404, "Database chưa tồn tại")
     backup_dir = Path("backups")
     backup_dir.mkdir(parents=True, exist_ok=True)
-    target = backup_dir / f"roastery-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.db"
+    target = backup_dir / f"app-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.db"
     shutil.copy2(db_path, target)
-    backups = sorted(backup_dir.glob("roastery-*.db"), reverse=True)
+    backups = sorted(backup_dir.glob("app-*.db"), reverse=True)
     for stale in backups[30:]:
         stale.unlink()
     audit(db, user.id, "system.backup", str(target.name))
