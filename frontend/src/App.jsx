@@ -1,48 +1,62 @@
-import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Toaster } from 'sonner'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
-import InventoryPage from './pages/InventoryPage'
+import AppLayout from './components/AppLayout'
+import PurchasePage from './pages/PurchasePage'
 import RoastPage from './pages/RoastPage'
-import SalesPage from './pages/SalesPage'
+import ProductsPage from './pages/ProductsPage'
 import CrmPage from './pages/CrmPage'
-import SystemUpdatePage from './pages/SystemUpdatePage'
-import BottomNav from './components/BottomNav'
+import SalesPage from './pages/SalesPage'
+import CustomersPage from './pages/CustomersPage'
+import FinancePage from './pages/FinancePage'
+import ReportsPage from './pages/ReportsPage'
+import SettingsPage from './pages/SettingsPage'
 import client from './api/client'
 
-function PrivateLayout() {
-  return (
-    <div>
-      <header className="p-3 bg-stone-900 text-white flex justify-between"><span>Coffee Roastery Manager</span><Link to="/system-update" className="text-xs">System</Link></header>
-      <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/roast" element={<RoastPage />} />
-        <Route path="/sales" element={<SalesPage />} />
-        <Route path="/crm" element={<CrmPage />} />
-        <Route path="/system-update" element={<SystemUpdatePage />} />
-      </Routes>
-      <BottomNav />
-    </div>
-  )
+function PrivateApp({ user, onLogout }) {
+  return <Routes>
+    <Route element={<AppLayout user={user} onLogout={onLogout} />}>
+      <Route path="/" element={<DashboardPage />} />
+      <Route path="/purchases" element={<PurchasePage />} />
+      <Route path="/roast" element={<RoastPage />} />
+      <Route path="/products" element={<ProductsPage />} />
+      <Route path="/crm" element={<CrmPage />} />
+      <Route path="/sales" element={<SalesPage />} />
+      <Route path="/customers" element={<CustomersPage />} />
+      <Route path="/finance" element={<FinancePage />} />
+      <Route path="/reports" element={<ReportsPage />} />
+      <Route path="/settings" element={<SettingsPage />} />
+    </Route>
+    <Route path="*" element={<Navigate to="/" />} />
+  </Routes>
 }
 
 export default function App() {
-  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('token'))
+  const [token, setToken] = useState(localStorage.getItem('token'))
+  const [user, setUser] = useState(null)
 
   useEffect(() => {
-    if (loggedIn) {
-      client.get('/auth/me').catch(() => {
-        localStorage.removeItem('token')
-        setLoggedIn(false)
-      })
-    }
-  }, [loggedIn])
+    if (!token) return
+    client.get('/auth/me').then((r) => setUser(r.data)).catch(() => {
+      localStorage.removeItem('token')
+      setToken(null)
+      setUser(null)
+    })
+  }, [token])
 
   return <BrowserRouter>
     <Toaster richColors position="top-center" />
-    {loggedIn ? <PrivateLayout /> : <LoginPage onLogin={() => setLoggedIn(true)} />}
-    {!loggedIn && <Navigate to="/" />}
+    {!token || !user ? <LoginPage onLogin={async () => {
+      const t = localStorage.getItem('token')
+      setToken(t)
+      const r = await client.get('/auth/me')
+      setUser(r.data)
+    }} /> : <PrivateApp user={user} onLogout={() => {
+      localStorage.removeItem('token')
+      setToken(null)
+      setUser(null)
+    }} />}
   </BrowserRouter>
 }

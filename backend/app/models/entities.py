@@ -20,7 +20,7 @@ from app.db.session import Base
 class RoleEnum(str, Enum):
     ADMIN = "ADMIN"
     WAREHOUSE = "WAREHOUSE"
-    SALES_CRM = "SALES_CRM"
+    SALES = "SALES"
 
 
 class SegmentEnum(str, Enum):
@@ -115,10 +115,24 @@ class Customer(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active")
+    pipeline_stage: Mapped[str] = mapped_column(String(30), default="Lead")
     assigned_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    expense_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    spent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class FollowUp(Base):
@@ -182,6 +196,7 @@ class Settings(Base):
     allow_negative_inventory: Mapped[bool] = mapped_column(Boolean, default=False)
     low_stock_threshold_kg: Mapped[float] = mapped_column(Float, default=60)
     vat_default_percent: Mapped[float] = mapped_column(Float, default=8)
+    warehouse_can_create_sales: Mapped[bool] = mapped_column(Boolean, default=True)
     app_version: Mapped[str] = mapped_column(String(20), default="1.0.0")
     schema_version: Mapped[str] = mapped_column(String(20), default="1")
 

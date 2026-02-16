@@ -51,7 +51,10 @@ class RoastIn(BaseModel):
 
 class CustomerIn(BaseModel):
     name: str
+    phone: str | None = None
+    address: str | None = None
     status: str = "active"
+    pipeline_stage: str = "Lead"
     assigned_user_id: int | None = None
     notes: str | None = None
 
@@ -89,3 +92,22 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ExpenseIn(BaseModel):
+    expense_type: str
+    amount: float = Field(gt=0)
+    spent_at: datetime | None = None
+    note: str | None = None
+
+
+class UserIn(BaseModel):
+    username: str
+    full_name: str
+    password: str = Field(min_length=6)
+    role: str
+
+
+class SettingsIn(BaseModel):
+    low_stock_threshold_kg: float = Field(gt=0)
+    warehouse_can_create_sales: bool

@@ -1,17 +1,10 @@
-import { BarChart3, Bean, Flame, Home, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import { mobileTabs } from './navigation'
 
-const items = [
-  { to: '/', label: 'Tổng quan', icon: Home },
-  { to: '/inventory', label: 'Kho', icon: Bean },
-  { to: '/roast', label: 'Rang', icon: Flame },
-  { to: '/sales', label: 'Bán hàng', icon: BarChart3 },
-  { to: '/crm', label: 'CRM', icon: Users },
-]
-
-export default function BottomNav() {
+export default function BottomNav({ role }) {
+  const items = mobileTabs.filter((item) => item.roles.includes(role))
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t p-2 grid grid-cols-5 gap-1">
+    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t p-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${items.length || 1}, minmax(0, 1fr))` }}>
       {items.map((item) => (
         <NavLink key={item.to} to={item.to} className="flex flex-col items-center text-xs">
           <item.icon size={18} />
